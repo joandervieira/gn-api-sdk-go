@@ -1,7 +1,7 @@
 package pix
 
 type pix struct {
-	endpoints
+	Endpoints
 }
 
 func NewGerencianet(configs map[string]interface{}) *pix {
@@ -12,8 +12,8 @@ func NewGerencianet(configs map[string]interface{}) *pix {
 	sandbox := configs["sandbox"].(bool)
 	timeout := configs["timeout"].(int)
 
-	requester := newRequester(clientID, clientSecret,CA, Key, sandbox, timeout)
+	requester := NewRequester(clientID, clientSecret, CA, Key, sandbox, timeout)
 	gn := pix{}
-	gn.requester = *requester
+	gn.Requester = *requester
 	return &gn
 }

@@ -2,6 +2,7 @@ package pix
 
 import (
 	"bytes"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"io/ioutil"
@@ -10,44 +11,43 @@ import (
 	"regexp"
 	"strings"
 	"time"
-	"crypto/tls"
 )
 
-type requester struct {
-	auth interface {
+type Requester struct {
+	Auth interface {
 		getAccessToken() (authResponseBody, error)
 	}
-	url       string
-	timeout   int
+	Url       string
+	Timeout   int
 	Token     string
 	TokenDue  time.Time
-	netClient interface {
+	NetClient interface {
 		Do(req *http.Request) (*http.Response, error)
 	}
 }
 
-func newRequester(clientID string, clientSecret string, CA string, Key string, sandbox bool, timeout int) *requester {
-	auth := newAuth(clientID, clientSecret,CA, Key, sandbox, timeout)
+func NewRequester(clientID string, clientSecret string, CA string, Key string, sandbox bool, timeout int) *Requester {
+	auth := NewAuth(clientID, clientSecret, CA, Key, sandbox, timeout)
 	var cert, _ = tls.LoadX509KeyPair(CA, Key)
-	
+
 	var netTransport = &http.Transport{
 		TLSClientConfig: &tls.Config{
 			Certificates: []tls.Certificate{cert},
 		},
 	}
-	httpClient := &http.Client{Timeout: time.Second * time.Duration(timeout),Transport: netTransport}
+	httpClient := &http.Client{Timeout: time.Second * time.Duration(timeout), Transport: netTransport}
 	var gnURL string
 	if sandbox {
 		gnURL = UrlSandbox
 	} else {
 		gnURL = UrlProduction
 	}
-	return &requester{*auth, gnURL, timeout, "", time.Time{}, httpClient}
+	return &Requester{*auth, gnURL, timeout, "", time.Time{}, httpClient}
 }
 
-func authenticate(requester *requester) (bool, error) {
+func Authenticate(requester *Requester) (bool, error) {
 	if requester.Token == "" || requester.TokenDue.Before(time.Now()) {
-		tokenData, authErr := requester.auth.getAccessToken()
+		tokenData, authErr := requester.Auth.getAccessToken()
 		if authErr != nil {
 			return false, authErr
 		}
@@ -57,29 +57,36 @@ func authenticate(requester *requester) (bool, error) {
 	return true, nil
 }
 
-func (requester requester) request(endpoint string, httpVerb string, requestParams map[string]string, body map[string]interface{}) (string, error) {
+func (requester Requester) Request(endpoint string, httpVerb string, requestParams map[string]string, body map[string]interface{}) (string, error) {
+	return requester.RequestWithHeaders(endpoint, httpVerb, requestParams, body, nil)
+}
+
+func (requester Requester) RequestWithHeaders(endpoint string, httpVerb string, requestParams map[string]string, body map[string]interface{}, headers map[string]string) (string, error) {
 	requestBody := new(bytes.Buffer)
 	json.NewEncoder(requestBody).Encode(body)
 
-	_, authErr := authenticate(&requester)
+	_, authErr := Authenticate(&requester)
 	if authErr != nil {
-		_, authErr = authenticate(&requester)
+		_, authErr = Authenticate(&requester)
 	}
 	if authErr != nil {
 		return "", authErr
 	}
 
-	route := getRoute(endpoint, requestParams)
-	route += getQueryString(requestParams)
-	req, _ := http.NewRequest(httpVerb, requester.url+route, requestBody)
+	route := GetRoute(endpoint, requestParams)
+	route += GetQueryString(requestParams)
+	req, _ := http.NewRequest(httpVerb, requester.Url+route, requestBody)
 
-	if ( httpVerb == "POST" || httpVerb == "PUT" ) && body != nil  {
+	if (httpVerb == "POST" || httpVerb == "PUT") && body != nil {
 		req.Header.Add("Content-Type", "application/json")
 	}
 	req.Header.Add("accept", "application/json")
-	req.Header.Add("api-sdk", "go-" + Version)
+	req.Header.Add("api-sdk", "go-"+Version)
 	req.Header.Add("Authorization", "Bearer "+requester.Token)
-	res, resErr := requester.netClient.Do(req)
+	for k, v := range headers {
+		req.Header.Add(k, v)
+	}
+	res, resErr := requester.NetClient.Do(req)
 
 	if resErr != nil {
 		return "", resErr
@@ -90,14 +97,14 @@ func (requester requester) request(endpoint string, httpVerb string, requestPara
 	reqResp, _ := ioutil.ReadAll(res.Body)
 	response := string(reqResp)
 
-	if (res.StatusCode != http.StatusOK && res.StatusCode != http.StatusCreated) {
+	if res.StatusCode != http.StatusOK && res.StatusCode != http.StatusCreated {
 		return "", errors.New(response)
 	}
 
 	return response, nil
 }
 
-func getRoute(endpoint string, params map[string]string) string {
+func GetRoute(endpoint string, params map[string]string) string {
 	patern, _ := regexp.Compile("\\:(\\w+)")
 	variables := patern.FindAllStringSubmatch(endpoint, -1)
 	for i := 0; i < len(variables); i++ {
@@ -109,7 +116,7 @@ func getRoute(endpoint string, params map[string]string) string {
 	return endpoint
 }
 
-func getQueryString(params map[string]string) string {
+func GetQueryString(params map[string]string) string {
 	var query string
 	for key, value := range params {
 		if query != "" {

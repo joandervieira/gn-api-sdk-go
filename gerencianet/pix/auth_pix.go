@@ -2,17 +2,17 @@ package pix
 
 import (
 	"bytes"
+	"crypto/tls"
 	b64 "encoding/base64"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"time"
-  	"crypto/tls"
 )
 
 type auth struct {
 	clientID, clientSecret string
-	CA, Key				   string
+	CA, Key                string
 	sandbox                bool
 	timeout                int
 	netClient              interface {
@@ -28,22 +28,19 @@ type authResponseBody struct {
 	TokenType    string `json:"token_type"`
 }
 
-
-func newAuth(clientID string, clientSecret string,CA string, Key string, sandbox bool, timeout int) *auth {
+func NewAuth(clientID string, clientSecret string, CA string, Key string, sandbox bool, timeout int) *auth {
 	var cert, erro = tls.LoadX509KeyPair(CA, Key)
 	if erro != nil {
-		println("Falha ao carregar par de chaves",erro)
+		println("Falha ao carregar par de chaves", erro)
 	}
 	var netTransport = &http.Transport{
 		TLSClientConfig: &tls.Config{
 			Certificates: []tls.Certificate{cert},
 		},
 	}
-	httpClient := &http.Client{Timeout: time.Second * time.Duration(timeout),Transport: netTransport}
-	return &auth{clientID, clientSecret,CA, Key, sandbox, timeout, httpClient}
+	httpClient := &http.Client{Timeout: time.Second * time.Duration(timeout), Transport: netTransport}
+	return &auth{clientID, clientSecret, CA, Key, sandbox, timeout, httpClient}
 }
-
-
 
 func (auth auth) getAccessToken() (authResponseBody, error) {
 	var response authResponseBody
@@ -63,18 +60,14 @@ func (auth auth) getAccessToken() (authResponseBody, error) {
 	req.Header.Add("Authorization", "Basic "+authCredentials)
 	req.Header.Add("Content-Type", "application/json")
 	req.Header.Add("charset", "utf-8")
-	req.Header.Add("api-sdk", "go-" + Version)
-
+	req.Header.Add("api-sdk", "go-"+Version)
 
 	res, resErr := auth.netClient.Do(req)
-
-	
-
 
 	if resErr != nil {
 		return response, resErr
 	}
-	
+
 	if res.StatusCode != http.StatusOK {
 		return response, errors.New("Status: " + res.Status + " Could not authenticate. \nPlease make sure you are using correct credentials and if you are using then in the correct environment.")
 	}
@@ -82,5 +75,5 @@ func (auth auth) getAccessToken() (authResponseBody, error) {
 	json.NewDecoder(res.Body).Decode(&response)
 
 	return response, nil
-	
+
 }
